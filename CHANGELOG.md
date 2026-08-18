@@ -5,12 +5,13 @@
 
 ---
 
-## 2026.08.18 — `calamares-3.4.2.r4.g841b478-15`
+## 2026.08.18 — `calamares` / `calamares-next` `-3.4.2.r4.g841b478-15`
 
 ### What Changed
 
-- **New build dir `calamares-3.4.2.r4.g841b478-15`** (`pkgrel=15`) carrying a downstream
-  patch: **`0001-keyboard-persist-xkb-state-in-vconsole-conf.patch`**.
+- **New build dirs `calamares-3.4.2.r4.g841b478-15` and `calamares-next-3.4.2.r4.g841b478-15`**
+  (both `pkgrel=15`) carrying a downstream patch:
+  **`0001-keyboard-persist-xkb-state-in-vconsole-conf.patch`**.
 - The patch makes Calamares write `XKBLAYOUT=` / `XKBMODEL=` / `XKBVARIANT=` / `XKBOPTIONS=`
   into the installed system's `/etc/vconsole.conf`, next to the `KEYMAP=` line it already wrote.
 - **Why:** systemd >= 256 reads the X11/XKB keyboard configuration from `vconsole.conf`, not
@@ -40,15 +41,17 @@
   The patch was generated against that tip; if the fork moves, the patch may need refreshing.
 - Drop the patch once the fix lands in the Calamares tree we build from.
 
+- Both tracks build from the same fork with the same `_pkgname=calamares`, so the patch file is
+  byte-identical in both dirs and the two PKGBUILDs now differ only in `pkgname`, `conflicts` and
+  `provides`.
+
 ### Files Modified
 
 - `calamares-3.4.2.r4.g841b478-15/PKGBUILD` — `pkgrel` 14 -> 15; patch added to `source=` +
   `sha256sums=`; `patch -Np1` step added to `prepare()`
 - `calamares-3.4.2.r4.g841b478-15/0001-keyboard-persist-xkb-state-in-vconsole-conf.patch` — new
-
-### Still open
-
-- `calamares-next` has no `-15` build dir — the same patch is **not** applied there yet.
+- `calamares-next-3.4.2.r4.g841b478-15/` — new build dir, copied from `-14` with the same
+  `pkgrel` bump, patch file and `prepare()` wiring
 
 ---
 
