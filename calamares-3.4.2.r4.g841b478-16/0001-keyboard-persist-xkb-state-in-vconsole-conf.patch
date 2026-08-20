@@ -1,0 +1,151 @@
+From: Kiro packaging <erik.dubois@gmail.com>
+Subject: [PATCH] keyboard: persist XKB state in vconsole.conf
+
+systemd >= 256 reads the X11/XKB keyboard configuration from
+XKBLAYOUT=/XKBMODEL=/XKBVARIANT=/XKBOPTIONS= in /etc/vconsole.conf and no
+longer from /etc/X11/xorg.conf.d/00-keyboard.conf. Calamares only wrote
+KEYMAP= there, so on a freshly installed system `localectl status` reports
+"X11 Layout: (unset)" and everything that asks systemd-localed for the
+layout -- Wayland compositors, greeters, desktop settings panels -- gets
+nothing.
+
+Write the four XKB assignments next to KEYMAP=, and drop any stale XKB*
+lines that were already present so re-running the job cannot leave two
+conflicting values behind. /etc/X11/xorg.conf.d/00-keyboard.conf keeps
+being written as before for the benefit of bare X11 sessions.
+
+Also check the return value when opening vconsole.conf for reading, which
+was ignored.
+
+Backported from CachyOS/cachyos-calamares commit 5afd22bd0 (PR #245),
+trimmed to the vconsole change only -- the upstream commit also swaps the
+X11 variant handling over to a new variantList() helper, which is a
+separate behavioural change and is deliberately not included here.
+
+Drop this patch once the fix lands in the calamares tree we build from.
+
+diff --git a/src/modules/keyboard/SetKeyboardLayoutJob.cpp b/src/modules/keyboard/SetKeyboardLayoutJob.cpp
+index 81eba13..0db612b 100644
+--- a/src/modules/keyboard/SetKeyboardLayoutJob.cpp
++++ b/src/modules/keyboard/SetKeyboardLayoutJob.cpp
+@@ -29,6 +29,8 @@
+ #include <QSettings>
+ #include <QTextStream>
+ 
++#include <algorithm>
++
+ namespace
+ {
+ QStringList
+@@ -37,8 +39,41 @@ removeEmpty( QStringList&& list )
+     list.removeAll( QString() );
+     return list;
+ }
++
++QString
++envAssignment( const QString& key, const QString& value )
++{
++    return key + '=' + value;
++}
++
+ }  // namespace
+ 
++STATICTEST QStringList
++vconsoleXkbLines( const QString& model,
++                  const QStringList& layouts,
++                  const QStringList& variants,
++                  const QString& options )
++{
++    QStringList lines;
++    if ( !layouts.isEmpty() )
++    {
++        lines << envAssignment( QStringLiteral( "XKBLAYOUT" ), layouts.join( "," ) );
++    }
++    if ( !model.isEmpty() )
++    {
++        lines << envAssignment( QStringLiteral( "XKBMODEL" ), model );
++    }
++    if ( !variants.isEmpty() )
++    {
++        lines << envAssignment( QStringLiteral( "XKBVARIANT" ), variants.join( "," ) );
++    }
++    if ( !options.isEmpty() )
++    {
++        lines << envAssignment( QStringLiteral( "XKBOPTIONS" ), options );
++    }
++    return lines;
++}
++
+ SetKeyboardLayoutJob::SetKeyboardLayoutJob( const QString& model,
+                                             const QString& layout,
+                                             const QString& variant,
+@@ -204,6 +239,9 @@ SetKeyboardLayoutJob::writeVConsoleData( const QString& vconsoleConfPath, const
+         cDebug() << "Trying to use X11 layout" << m_layout << "as the virtual console layout";
+         keymap = m_layout;
+     }
++    const QStringList layouts = removeEmpty( { m_additionalLayoutInfo.additionalLayout, m_layout } );
++    const QStringList variants = removeEmpty( { m_additionalLayoutInfo.additionalVariant, m_variant } );
++    const QStringList xkbLines = vconsoleXkbLines( m_model, layouts, variants, m_additionalLayoutInfo.groupSwitcher );
+ 
+     QStringList existingLines;
+ 
+@@ -211,7 +249,11 @@ SetKeyboardLayoutJob::writeVConsoleData( const QString& vconsoleConfPath, const
+     QFile file( vconsoleConfPath );
+     if ( file.exists() )
+     {
+-        file.open( QIODevice::ReadOnly | QIODevice::Text );
++        if ( !file.open( QIODevice::ReadOnly | QIODevice::Text ) )
++        {
++            cError() << "Could not open" << file.fileName() << "for reading.";
++            return false;
++        }
+         QTextStream stream( &file );
+         while ( !stream.atEnd() )
+         {
+@@ -233,13 +275,25 @@ SetKeyboardLayoutJob::writeVConsoleData( const QString& vconsoleConfPath, const
+     }
+     QTextStream stream( &file );
+     bool found = false;
++    const QStringList replacedKeys = { QStringLiteral( "KEYMAP=" ),
++                                       QStringLiteral( "XKBLAYOUT=" ),
++                                       QStringLiteral( "XKBMODEL=" ),
++                                       QStringLiteral( "XKBVARIANT=" ),
++                                       QStringLiteral( "XKBOPTIONS=" ) };
+     for ( const QString& existingLine : std::as_const( existingLines ) )
+     {
+         if ( existingLine.trimmed().startsWith( "KEYMAP=" ) )
+         {
+-            stream << "KEYMAP=" << keymap << '\n';
++            stream << envAssignment( QStringLiteral( "KEYMAP" ), keymap ) << '\n';
+             found = true;
+         }
++        else if ( std::any_of( replacedKeys.cbegin(),
++                               replacedKeys.cend(),
++                               [ &existingLine ]( const QString& key )
++                               { return existingLine.trimmed().startsWith( key ); } ) )
++        {
++            continue;
++        }
+         else
+         {
+             stream << existingLine << '\n';
+@@ -248,12 +302,17 @@ SetKeyboardLayoutJob::writeVConsoleData( const QString& vconsoleConfPath, const
+     // Add a KEYMAP= line if there wasn't any
+     if ( !found )
+     {
+-        stream << "KEYMAP=" << keymap << '\n';
++        stream << envAssignment( QStringLiteral( "KEYMAP" ), keymap ) << '\n';
++    }
++    for ( const QString& xkbLine : xkbLines )
++    {
++        stream << xkbLine << '\n';
+     }
+     stream.flush();
+     file.close();
+ 
+-    cDebug() << Logger::SubEntry << "Written KEYMAP=" << keymap << "to vconsole.conf" << stream.status();
++    cDebug() << Logger::SubEntry << "Written KEYMAP=" << keymap << "and XKB settings to vconsole.conf"
++             << stream.status();
+ 
+     return ( stream.status() == QTextStream::Ok );
+ }
