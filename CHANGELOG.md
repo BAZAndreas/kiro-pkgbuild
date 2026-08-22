@@ -5,6 +5,42 @@
 
 ---
 
+## 2026.08.22 — `calamares-3.4.2.r4.g841b478-17` / `calamares-next-3.4.2.r4.g841b478-16`
+
+### What Changed
+
+- **`kiro-trust-desktop-launchers` was being installed non-executable.** Both PKGBUILDs used
+  `install -Dm644` for a `#!/bin/bash` script, so it landed at mode `0644` on the live ISO.
+  Running it directly returns **exit 126 / Permission denied**.
+- **Consequence:** the XDG autostart entry that is the script's *intended* trigger —
+  `~/.config/autostart/trust-desktop-launchers.desktop`, whose `Exec=` points straight at the
+  path — has been failing silently on every live boot. XFCE/Thunar then pops the "Untrusted
+  application launcher" dialog on the desktop "Install kiro" icon, which is exactly the
+  prompt this script exists to prevent.
+- **Why it went unnoticed:** `kiro-trust-launchers.service` invokes it as
+  `ExecStart=/bin/bash /usr/local/bin/kiro-trust-desktop-launchers`. Passing the script to
+  `bash` as an argument bypasses the exec bit entirely, so the unit reported
+  `status=0/SUCCESS` and masked the broken permission for as long as it has been wrong.
+- Fixed to `install -Dm755` in both tracks. New build dirs rather than in-place edits, because
+  `-16` / `-15` are already built and shipped on ISO v26.08.22.
+
+### Technical Details
+
+- `calamares-3.4.2.r4.g841b478-17/PKGBUILD` — `pkgrel=16` → `17`, line 151 `-Dm644` → `-Dm755`.
+- `calamares-next-3.4.2.r4.g841b478-16/PKGBUILD` — `pkgrel=15` → `16`, same one-line change.
+- Both dirs are otherwise byte-identical copies of their predecessor (the vconsole XKB patch,
+  `build.sh`, `install`, `cal-kiro.desktop`, `calamares_polkit`, the unit and the script itself
+  all carry over unchanged).
+- **Both trigger paths are deliberately kept.** The `.desktop` and the systemd user unit now
+  both work, and the script is idempotent — it only ever runs `chmod +x` plus two `gio set`
+  calls in a loop, each `|| true`-guarded. Removing either mechanism would risk the feature on
+  whichever session type the other one doesn't cover, for no gain.
+- `calamares-wayland` in `~/KIROTUX/KIROTUX-PKG-BUILD/` carries the identical `-Dm644` bug at
+  line 148 and was **intentionally left untouched** at Erik's instruction.
+- Found by `/kiro-check` against a live ISO boot of v26.08.22.
+
+---
+
 ## 2026.08.18 — `calamares` / `calamares-next` `-3.4.2.r4.g841b478-15`
 
 ### What Changed
