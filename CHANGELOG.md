@@ -5,6 +5,42 @@
 
 ---
 
+## 2026.08.25 — field verification of the `kiro-trust-desktop-launchers` fix
+
+### What Changed
+
+- **No code change.** This entry records that the 2026.08.22 `-Dm755` fix is confirmed working on
+  a shipping ISO, closing the one item that could not be verified from an installed system.
+- The script installs to `/home/liveuser/` and `/usr/local/bin` and only runs in a **live**
+  session, so every check before today could confirm the package *contents* but not the
+  behaviour. Verified now against a live boot of **`kiro-v26.08.25`**.
+- **Result: the "Untrusted application launcher" dialog is gone.** Erik launched Calamares from
+  the desktop "Install kiro" icon with no prompt.
+
+### Technical Details
+
+Evidence gathered over SSH from the live session (`liveuser`, VirtualBox NAT 2020 → 22):
+
+- `/usr/local/bin/kiro-trust-desktop-launchers` is `-rwxr-xr-x` (mode `0755`) — the `-Dm644` →
+  `-Dm755` change from `-17` is present on the ISO.
+- `kiro-trust-launchers.service` is `enabled` in
+  `~/.config/systemd/user/default.target.wants/`, ran this boot, and exited
+  `Main PID: 883 (code=exited, status=0/SUCCESS)`.
+- `~/Desktop/cal-kiro.desktop` carries all three things the script sets: the exec bit,
+  `metadata::trusted: true`, and `metadata::xfce-exe-checksum` = `440421000b96f1838f7a1…`, which
+  matches the file's actual `sha256sum` of `440421000b96f1838f7a14b0…`. The runtime-computed
+  checksum lining up with the on-disk file is the specific thing Thunar 4.20 tests, so this is
+  the fix working rather than merely running.
+- Note the `status=0/SUCCESS` masking described in the 2026.08.22 entry still applies — the unit
+  would report success even with the bug present, which is why the checksum/permission evidence
+  above matters more than the unit state.
+
+### Files Modified
+
+- `CHANGELOG.md` (this entry only — no PKGBUILD or package changes)
+
+---
+
 ## 2026.08.22 — `calamares-3.4.2.r4.g841b478-17` / `calamares-next-3.4.2.r4.g841b478-16`
 
 ### What Changed
